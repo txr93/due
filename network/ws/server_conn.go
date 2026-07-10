@@ -8,6 +8,7 @@
 package ws
 
 import (
+	"context"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -526,8 +527,8 @@ func (c *serverConn) doWriteToQueue(queue chan *task, typ int8, msg ...[]byte) e
 		t.msg = msg[0]
 	}
 
-	if c.server.opts.writeTimeout > 0 && len(queue) == cap(queue) {
-		ctx, cancel := context.WithTimeout(context.Background(), c.server.opts.writeTimeout)
+	if c.connMgr.server.opts.writeTimeout > 0 && len(queue) == cap(queue) {
+		ctx, cancel := context.WithTimeout(context.Background(), c.connMgr.server.opts.writeTimeout)
 		defer cancel()
 
 		select {

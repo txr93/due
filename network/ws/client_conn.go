@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -474,7 +475,9 @@ func (c *clientConn) doWriteToQueue(queue chan *task, typ int8, msg ...[]byte) e
 		case <-ctx.Done():
 			c.doRecycleToPool(t)
 			log.Warnf("ws client connection write queue timeout, force closing connection, cid: %d", c.id)
-			go c.forceClose()
+			xcall.Go(func() {
+				c.forceClose()
+			})
 			return ctx.Err()
 		case queue <- t:
 			return nil
