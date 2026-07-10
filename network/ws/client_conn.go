@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"context"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -467,20 +466,14 @@ func (c *clientConn) doWriteToQueue(queue chan *task, typ int8, msg ...[]byte) e
 		t.msg = msg[0]
 	}
 
-	if c.client.opts.writeTimeout > 0 && len(queue) == cap(queue) {
-		ctx, cancel := context.WithTimeout(context.Background(), c.client.opts.writeTimeout)
-		defer cancel()
-
-		select {
-		case <-ctx.Done():
-			c.doRecycleToPool(t)
-			return ctx.Err()
-		case queue <- t:
-			return nil
-		}
+	select {
+	case queue <- t:
+		return nil
+	default:
+		// 队列满了，直接回收并主动强关连接，防止卡死客户端协程
+		c.doRecycleToPool(t)
+		log.Warnf("ws client connection write queue is full, force closing connection, cid: %d", c.id)
+		go c.forceClose()
+		return errors.New("write queue is full")
 	}
-
-	queue <- t
-
-	return nil
 }

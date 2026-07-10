@@ -5,6 +5,8 @@ import (
 	"github.com/dobyte/due/v2/cluster"
 	"github.com/dobyte/due/v2/errors"
 	"github.com/dobyte/due/v2/packet"
+	"github.com/dobyte/due/v2/session"
+	"github.com/dobyte/due/v2/log"
 )
 
 type provider struct {
@@ -43,6 +45,13 @@ func (p *provider) Deliver(ctx context.Context, gid, nid string, cid, uid int64,
 		}
 
 		if !ok {
+			log.Warnf("deliver message failed: user %d is not bound to node %s, force disconnecting client via gate %s", uid, p.node.opts.id, gid)
+			p.node.proxy.Disconnect(ctx, &cluster.DisconnectArgs{
+				GID:    gid,
+				Kind:   session.Conn,
+				Target: cid,
+				Force:  true,
+			})
 			return errors.ErrNotFoundSession
 		}
 	}

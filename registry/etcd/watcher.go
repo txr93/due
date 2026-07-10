@@ -12,8 +12,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dobyte/due/v2/errors"
+	"github.com/dobyte/due/v2/log"
 	"github.com/dobyte/due/v2/registry"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -137,10 +139,21 @@ func newWatcherMgr(r *Registry, ctx context.Context, serviceName string) (*watch
 					if err = w.ctx.Err(); err != nil {
 						return
 					}
+					log.Warnf("etcd watch channel closed unexpectedly, reconnecting...")
+					time.Sleep(2 * time.Second)
+					w.watcher.Close()
+					w.watcher = clientv3.NewWatcher(r.opts.client)
+					w.chWatch = w.watcher.Watch(w.ctx, buildPrefixKey(r.opts.namespace, w.serviceName), clientv3.WithPrefix())
+					continue
 				}
 
-				if res.Err() != nil {
-					return
+				if err := res.Err(); err != nil {
+					log.Warnf("etcd watch error, reconnecting: %v", err)
+					time.Sleep(2 * time.Second)
+					w.watcher.Close()
+					w.watcher = clientv3.NewWatcher(r.opts.client)
+					w.chWatch = w.watcher.Watch(w.ctx, buildPrefixKey(r.opts.namespace, w.serviceName), clientv3.WithPrefix())
+					continue
 				}
 
 				for _, ev := range res.Events {

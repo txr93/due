@@ -52,6 +52,10 @@ func (p *proxy) unbindGate(ctx context.Context, cid, uid int64) error {
 		log.Errorf("user unbind failed, gid: %s, cid: %d, uid: %d, err: %v", p.gate.opts.id, cid, uid, err)
 	}
 
+	p.nodeLinker.ClearSources(uid)
+
+	p.trigger(ctx, cluster.Disconnect, cid, uid)
+
 	return err
 }
 

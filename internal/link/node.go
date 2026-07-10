@@ -205,13 +205,14 @@ func (l *NodeLinker) Deliver(ctx context.Context, args *DeliverArgs) error {
 		if _, err = l.doRPC(ctx, args.Route, args.UID, func(ctx context.Context, client *node.Client) (bool, any, error) {
 			isDeliver = true
 
-			return false, nil, client.Deliver(ctx, args.CID, args.UID, buf)
+			err := client.Deliver(ctx, args.CID, args.UID, buf)
+			return errors.Is(err, errors.ErrNotFoundUserLocation) || errors.Is(err, errors.ErrNotFoundSession), nil, err
 		}); err != nil {
 			if !isDeliver {
 				buf.Release()
 			}
 
-			if !errors.Is(err, errors.ErrNotFoundUserLocation) {
+			if !errors.Is(err, errors.ErrNotFoundUserLocation) && !errors.Is(err, errors.ErrNotFoundSession) {
 				return err
 			}
 		}
@@ -419,6 +420,14 @@ func (l *NodeLinker) doStoreSource(uid int64, name, nid string) {
 	if done && l.opts.DoneHandler != nil {
 		l.opts.DoneHandler()
 	}
+}
+
+// 清理用户所有的节点来源
+func (l *NodeLinker) ClearSources(uid int64) {
+	l.rw.Lock()
+	defer l.rw.Unlock()
+
+	delete(l.sources, uid)
 }
 
 // 删除用户节点来源

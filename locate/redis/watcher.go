@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dobyte/due/v2/errors"
 	"github.com/dobyte/due/v2/locate"
@@ -119,7 +120,12 @@ func newWatcherMgr(ctx context.Context, l *Locator, key string, kinds ...string)
 		for {
 			iface, err := wm.sub.Receive(wm.ctx)
 			if err != nil {
-				return
+				if wm.ctx.Err() != nil {
+					return
+				}
+				log.Warnf("redis locator watch failed, retrying: %v", err)
+				time.Sleep(2 * time.Second)
+				continue
 			}
 
 			switch v := iface.(type) {
