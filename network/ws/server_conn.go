@@ -526,13 +526,29 @@ func (c *serverConn) doWriteToQueue(queue chan *task, typ int8, msg ...[]byte) e
 		t.msg = msg[0]
 	}
 
+	if c.server.opts.writeTimeout > 0 && len(queue) == cap(queue) {
+		ctx, cancel := context.WithTimeout(context.Background(), c.server.opts.writeTimeout)
+		defer cancel()
+
+		select {
+		case <-ctx.Done():
+			c.doRecycleToPool(t)
+			log.Warnf("ws server connection write queue timeout, force closing connection, cid: %d", c.id)
+			xcall.Go(func() {
+				c.forceClose(true)
+			})
+			return ctx.Err()
+		case queue <- t:
+			return nil
+		}
+	}
+
 	select {
 	case queue <- t:
 		return nil
 	default:
-		// 队列满了，直接回收并主动强关连接，防止卡死 RPC 协程
 		c.doRecycleToPool(t)
-		log.Warnf("ws connection write queue is full, force closing connection, cid: %d", c.id)
+		log.Warnf("ws server connection write queue is full, force closing connection, cid: %d", c.id)
 		xcall.Go(func() {
 			c.forceClose(true)
 		})
