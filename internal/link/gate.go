@@ -91,6 +91,55 @@ func (l *GateLinker) LocateGate(ctx context.Context, uid int64) (string, error) 
 	return gid, nil
 }
 
+// LocateGates 批量定位用户所在网关（优先命中进程内 sources 缓存，仅对未命中 UID 发起单次批量查询并回填）
+func (l *GateLinker) LocateGates(ctx context.Context, uids []int64) (map[int64]string, error) {
+	if l.opts.Locator == nil {
+		return nil, errors.ErrNotFoundLocator
+	}
+
+	res := make(map[int64]string, len(uids))
+	if len(uids) == 0 {
+		return res, nil
+	}
+
+	seen := make(map[int64]struct{}, len(uids))
+	missUIDs := make([]int64, 0, len(uids))
+	for _, uid := range uids {
+		if uid <= 0 {
+			continue
+		}
+		if _, dup := seen[uid]; dup {
+			continue
+		}
+		seen[uid] = struct{}{}
+
+		if val, ok := l.sources.Load(uid); ok {
+			if gid := val.(string); gid != "" {
+				res[uid] = gid
+				continue
+			}
+		}
+		missUIDs = append(missUIDs, uid)
+	}
+
+	if len(missUIDs) == 0 {
+		return res, nil
+	}
+
+	fetched, err := l.opts.Locator.LocateGates(ctx, missUIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for uid, gid := range fetched {
+		if gid != "" {
+			l.sources.Store(uid, gid)
+			res[uid] = gid
+		}
+	}
+	return res, nil
+}
+
 // BindGate 绑定网关
 func (l *GateLinker) BindGate(ctx context.Context, gid string, cid, uid int64) error {
 	client, err := l.doBuildClient(gid)

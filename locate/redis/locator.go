@@ -105,6 +105,65 @@ func (l *Locator) LocateGate(ctx context.Context, uid int64) (string, error) {
 	return val.(string), nil
 }
 
+// deduplicateUIDs 过滤非正数并去重 UID 列表
+func deduplicateUIDs(uids []int64) []int64 {
+	if len(uids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(uids))
+	out := make([]int64, 0, len(uids))
+	for _, uid := range uids {
+		if uid <= 0 {
+			continue
+		}
+		if _, dup := seen[uid]; dup {
+			continue
+		}
+		seen[uid] = struct{}{}
+		out = append(out, uid)
+	}
+	return out
+}
+
+// LocateGates 批量定位用户所在网关（兼容单机与 Redis Cluster 单次 Pipeline 合并查询）
+func (l *Locator) LocateGates(ctx context.Context, uids []int64) (map[int64]string, error) {
+	if l.err != nil {
+		return nil, l.err
+	}
+
+	unique := deduplicateUIDs(uids)
+	res := make(map[int64]string, len(unique))
+	if len(unique) == 0 {
+		return res, nil
+	}
+	if len(unique) == 1 {
+		gid, err := l.LocateGate(ctx, unique[0])
+		if err != nil {
+			return nil, err
+		}
+		if gid != "" {
+			res[unique[0]] = gid
+		}
+		return res, nil
+	}
+
+	pipe := l.opts.client.Pipeline()
+	cmds := make([]*redis.StringCmd, len(unique))
+	for i, uid := range unique {
+		cmds[i] = pipe.Get(ctx, fmt.Sprintf(userGateKey, l.opts.prefix, uid))
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+
+	for i, cmd := range cmds {
+		if gid, err := cmd.Result(); err == nil && gid != "" {
+			res[unique[i]] = gid
+		}
+	}
+	return res, nil
+}
+
 // LocateNode 定位用户所在节点
 func (l *Locator) LocateNode(ctx context.Context, uid int64, name string) (string, error) {
 	if l.err != nil {
@@ -149,6 +208,84 @@ func (l *Locator) LocateNodes(ctx context.Context, uid int64) (map[string]string
 	}
 
 	return val.(map[string]string), nil
+}
+
+// BatchLocateNode 批量定位用户所在指定名称节点
+func (l *Locator) BatchLocateNode(ctx context.Context, uids []int64, name string) (map[int64]string, error) {
+	if l.err != nil {
+		return nil, l.err
+	}
+
+	unique := deduplicateUIDs(uids)
+	res := make(map[int64]string, len(unique))
+	if len(unique) == 0 || name == "" {
+		return res, nil
+	}
+	if len(unique) == 1 {
+		nid, err := l.LocateNode(ctx, unique[0], name)
+		if err != nil {
+			return nil, err
+		}
+		if nid != "" {
+			res[unique[0]] = nid
+		}
+		return res, nil
+	}
+
+	pipe := l.opts.client.Pipeline()
+	cmds := make([]*redis.StringCmd, len(unique))
+	for i, uid := range unique {
+		cmds[i] = pipe.HGet(ctx, fmt.Sprintf(userNodeKey, l.opts.prefix, uid), name)
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+
+	for i, cmd := range cmds {
+		if nid, err := cmd.Result(); err == nil && nid != "" {
+			res[unique[i]] = nid
+		}
+	}
+	return res, nil
+}
+
+// BatchLocateNodes 批量定位用户所在节点列表
+func (l *Locator) BatchLocateNodes(ctx context.Context, uids []int64) (map[int64]map[string]string, error) {
+	if l.err != nil {
+		return nil, l.err
+	}
+
+	unique := deduplicateUIDs(uids)
+	res := make(map[int64]map[string]string, len(unique))
+	if len(unique) == 0 {
+		return res, nil
+	}
+	if len(unique) == 1 {
+		nodes, err := l.LocateNodes(ctx, unique[0])
+		if err != nil {
+			return nil, err
+		}
+		if len(nodes) > 0 {
+			res[unique[0]] = nodes
+		}
+		return res, nil
+	}
+
+	pipe := l.opts.client.Pipeline()
+	cmds := make([]*redis.MapStringStringCmd, len(unique))
+	for i, uid := range unique {
+		cmds[i] = pipe.HGetAll(ctx, fmt.Sprintf(userNodeKey, l.opts.prefix, uid))
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+
+	for i, cmd := range cmds {
+		if nodes, err := cmd.Result(); err == nil && len(nodes) > 0 {
+			res[unique[i]] = nodes
+		}
+	}
+	return res, nil
 }
 
 // BindGate 绑定网关

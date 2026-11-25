@@ -26,10 +26,16 @@ type Locator interface {
 	UnbindNode(ctx context.Context, uid int64, name string, nid string) error
 	// LocateGate 定位用户所在网关
 	LocateGate(ctx context.Context, uid int64) (string, error)
+	// LocateGates 批量定位用户所在网关
+	LocateGates(ctx context.Context, uids []int64) (map[int64]string, error)
 	// LocateNode 定位用户所在节点
 	LocateNode(ctx context.Context, uid int64, name string) (string, error)
+	// BatchLocateNode 批量定位用户所在指定名称节点
+	BatchLocateNode(ctx context.Context, uids []int64, name string) (map[int64]string, error)
 	// LocateNodes 定位用户所在节点列表
 	LocateNodes(ctx context.Context, uid int64) (map[string]string, error)
+	// BatchLocateNodes 批量定位用户所在节点列表
+	BatchLocateNodes(ctx context.Context, uids []int64) (map[int64]map[string]string, error)
 }
 
 type Watcher interface {

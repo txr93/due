@@ -111,6 +111,67 @@ func (l *NodeLinker) LocateNodes(ctx context.Context, uid int64) (map[string]str
 	return l.opts.Locator.LocateNodes(ctx, uid)
 }
 
+// BatchLocateNode 批量定位用户所在指定名称节点（优先命中进程内 sources 缓存，未命中者单次批量查询并回填）
+func (l *NodeLinker) BatchLocateNode(ctx context.Context, uids []int64, name string) (map[int64]string, error) {
+	if l.opts.Locator == nil {
+		return nil, errors.ErrNotFoundLocator
+	}
+
+	res := make(map[int64]string, len(uids))
+	if len(uids) == 0 || name == "" {
+		return res, nil
+	}
+
+	seen := make(map[int64]struct{}, len(uids))
+	missUIDs := make([]int64, 0, len(uids))
+
+	l.rw.RLock()
+	for _, uid := range uids {
+		if uid <= 0 {
+			continue
+		}
+		if _, dup := seen[uid]; dup {
+			continue
+		}
+		seen[uid] = struct{}{}
+
+		if sources, ok := l.sources[uid]; ok {
+			if nid := sources[name]; nid != "" {
+				res[uid] = nid
+				continue
+			}
+		}
+		missUIDs = append(missUIDs, uid)
+	}
+	l.rw.RUnlock()
+
+	if len(missUIDs) == 0 {
+		return res, nil
+	}
+
+	fetched, err := l.opts.Locator.BatchLocateNode(ctx, missUIDs, name)
+	if err != nil {
+		return nil, err
+	}
+
+	for uid, nid := range fetched {
+		if nid != "" {
+			l.doStoreSource(uid, name, nid)
+			res[uid] = nid
+		}
+	}
+	return res, nil
+}
+
+// BatchLocateNodes 批量定位用户所在节点列表
+func (l *NodeLinker) BatchLocateNodes(ctx context.Context, uids []int64) (map[int64]map[string]string, error) {
+	if l.opts.Locator == nil {
+		return nil, errors.ErrNotFoundLocator
+	}
+
+	return l.opts.Locator.BatchLocateNodes(ctx, uids)
+}
+
 // BindNode 绑定节点
 // 单个用户可以绑定到多个节点服务器上，相同名称的节点服务器只能绑定一个，多次绑定会到相同名称的节点服务器会覆盖之前的绑定。
 // 绑定操作会通过发布订阅方式同步到网关服务器和其他相关节点服务器上。

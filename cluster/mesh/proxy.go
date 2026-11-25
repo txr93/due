@@ -84,6 +84,11 @@ func (p *Proxy) LocateGate(ctx context.Context, uid int64) (string, error) {
 	return p.gateLinker.LocateGate(ctx, uid)
 }
 
+// LocateGates 批量定位用户所在网关
+func (p *Proxy) LocateGates(ctx context.Context, uids []int64) (map[int64]string, error) {
+	return p.gateLinker.LocateGates(ctx, uids)
+}
+
 // BindGate 绑定网关
 func (p *Proxy) BindGate(ctx context.Context, gid string, cid, uid int64) error {
 	return p.gateLinker.BindGate(ctx, gid, cid, uid)
@@ -114,9 +119,19 @@ func (p *Proxy) LocateNode(ctx context.Context, uid int64, name string) (string,
 	return p.nodeLinker.LocateNode(ctx, uid, name)
 }
 
+// BatchLocateNode 批量定位用户所在指定名称节点
+func (p *Proxy) BatchLocateNode(ctx context.Context, uids []int64, name string) (map[int64]string, error) {
+	return p.nodeLinker.BatchLocateNode(ctx, uids, name)
+}
+
 // LocateNodes 定位用户所在节点列表
 func (p *Proxy) LocateNodes(ctx context.Context, uid int64) (map[string]string, error) {
 	return p.nodeLinker.LocateNodes(ctx, uid)
+}
+
+// BatchLocateNodes 批量定位用户所在节点列表
+func (p *Proxy) BatchLocateNodes(ctx context.Context, uids []int64) (map[int64]map[string]string, error) {
+	return p.nodeLinker.BatchLocateNodes(ctx, uids)
 }
 
 // BindNode 绑定节点
